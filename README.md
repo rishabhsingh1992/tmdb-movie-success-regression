@@ -1,6 +1,6 @@
 # Movie Success Regression
 
-A machine-learning service that predicts whether a movie will be **profitable** (`revenue > budget`) using budget, popularity, runtime, original language, and genres. The model is a linear regression pipeline exposed via a FastAPI REST API.
+A machine-learning service that predicts whether a movie will be **profitable** (`revenue > budget`) using budget, popularity, runtime, original language, genres, keywords, production companies, production countries, and release date metadata. The model is a linear regression pipeline exposed via a FastAPI REST API.
 
 ---
 
@@ -14,7 +14,7 @@ A machine-learning service that predicts whether a movie will be **profitable** 
 | Serialisation | `joblib` |
 | Dataset | [TMDB 5000 Movies](https://www.kaggle.com/datasets/tmdb/tmdb-movie-metadata) |
 
-The model is trained on the TMDB 5000 dataset. The training pipeline now parses the raw TMDB `genres` JSON-like payload and uses the normalized genre names as a text feature.
+The model is trained on the TMDB 5000 dataset. The training pipeline parses the raw TMDB `genres`, `keywords`, `production_companies`, and `production_countries` JSON-like payloads as text features, and derives numerical calendar features from `release_date`.
 
 ---
 
@@ -62,7 +62,7 @@ This will:
 
 1. Engineer `profit = revenue - budget`.
 2. Parse and normalize `genres` values.
-3. Train a preprocessing + regression pipeline on `budget`, `popularity`, `runtime`, `original_language`, and `genres`.
+3. Train a preprocessing + regression pipeline on `budget`, `popularity`, `runtime`, `original_language`, `genres`, `keywords`, `production_companies`, `production_countries`, and `release_date`.
 4. Print MAE, RMSE, and R².
 5. Save the trained pipeline to `models/movie_success_pipeline.pkl`.
 
@@ -90,7 +90,11 @@ Docs: `http://localhost:8000/docs`
   "popularity": 85.5,
   "runtime": 132,
   "original_language": "en",
-  "genres": ["Action", "Adventure", "Science Fiction"]
+  "genres": ["Action", "Adventure", "Science Fiction"],
+  "keywords": ["superhero", "space travel"],
+  "production_companies": ["Marvel Studios", "Walt Disney Pictures"],
+  "production_countries": ["United States of America"],
+  "release_date": "2014-08-01"
 }
 ```
 
@@ -101,6 +105,10 @@ Docs: `http://localhost:8000/docs`
 | `runtime` | `float` | Film duration in minutes |
 | `original_language` | `str` | ISO language code |
 | `genres` | `list[str]` | List of genre labels |
+| `keywords` | `list[str]` | List of TMDB keyword labels |
+| `production_companies` | `list[str]` | List of production company names |
+| `production_countries` | `list[str]` | List of production country names |
+| `release_date` | `str` | Movie release date in `YYYY-MM-DD` format |
 
 **Response**
 
