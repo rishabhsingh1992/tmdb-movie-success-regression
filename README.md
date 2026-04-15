@@ -1,18 +1,6 @@
 # Movie Success Regression
 
-A machine-learning service that predicts whether a movie will be **profitable** (revenue > budget) given its budget, popularity score, and runtime. The model is a regularised linear regression pipeline exposed via a FastAPI REST API.
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Project Structure](#project-structure)
-- [Setup](#setup)
-- [Training the Model](#training-the-model)
-- [Running the API](#running-the-api)
-- [API Reference](#api-reference)
-- [Dependencies](#dependencies)
+A machine-learning service that predicts whether a movie will be **profitable** (`revenue > budget`) using budget, popularity, runtime, original language, and genres. The model is a linear regression pipeline exposed via a FastAPI REST API.
 
 ---
 
@@ -20,25 +8,24 @@ A machine-learning service that predicts whether a movie will be **profitable** 
 
 | Component | Technology |
 |-----------|-----------|
-| Model | `scikit-learn` — `LinearRegression` + `StandardScaler` |
+| Model | `scikit-learn` — `LinearRegression` |
+| Feature preprocessing | `StandardScaler` + `OneHotEncoder` + `TfidfVectorizer` |
 | API | FastAPI + Uvicorn |
 | Serialisation | `joblib` |
 | Dataset | [TMDB 5000 Movies](https://www.kaggle.com/datasets/tmdb/tmdb-movie-metadata) |
 
-The model is trained on the TMDB 5000 dataset. A preprocessing pipeline standardises features before training. The trained model and scaler are persisted to `models/` and loaded at API startup.
-
-The `POST /predict` endpoint returns a binary profitability signal derived from the continuous regression output (`profit = revenue − budget`).
+The model is trained on the TMDB 5000 dataset. The training pipeline now parses the raw TMDB `genres` JSON-like payload and uses the normalized genre names as a text feature.
 
 ---
 
 ## Project Structure
 
-```
+```text
 movie-success-regression/
 ├── api/
 │   └── routes/
-│       └── predict.py        # FastAPI router — POST /predict
-├── models/                   # Serialised model artefacts (git-ignored)
+│       └── predict.py        # FastAPI app — POST /predict
+├── models/                   # Serialized model artefacts (git-ignored)
 ├── main.py                   # Model training script
 ├── requirements.txt
 ├── .gitignore
@@ -53,16 +40,11 @@ movie-success-regression/
 **Prerequisites:** Python 3.10+
 
 ```bash
-# 1. Clone the repository
 git clone <repo-url>
 cd movie-success-regression
-
-# 2. Create and activate a virtual environment
 python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # macOS/Linux
-
-# 3. Install dependencies
+source .venv/bin/activate     # macOS/Linux
+# .venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 ```
 
@@ -70,7 +52,7 @@ pip install -r requirements.txt
 
 ## Training the Model
 
-Place the TMDB dataset CSV (`tmdb_5000_movies.csv`) in the project root, then run:
+Place `tmdb_5000_movies.csv` in `../../Datasets/`, then run:
 
 ```bash
 python main.py
@@ -78,22 +60,21 @@ python main.py
 
 This will:
 
-1. Load and clean the dataset (drop nulls, engineer `profit` feature).
-2. Train a `StandardScaler → LinearRegression` pipeline on `budget`, `popularity`, and `runtime`.
-3. Evaluate the model (MSE / RMSE / R²) and print results to the console.
-4. Serialise the trained model and scaler to `models/`.
+1. Engineer `profit = revenue - budget`.
+2. Parse and normalize `genres` values.
+3. Train a preprocessing + regression pipeline on `budget`, `popularity`, `runtime`, `original_language`, and `genres`.
+4. Print MAE, RMSE, and R².
+5. Save the trained pipeline to `models/movie_success_pipeline.pkl`.
 
 ---
 
 ## Running the API
 
-The model artefacts must exist in `models/` before starting the API (run training first).
-
 ```bash
 uvicorn api.routes.predict:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Interactive docs are available at `http://localhost:8000/docs`.
+Docs: `http://localhost:8000/docs`
 
 ---
 
@@ -101,15 +82,15 @@ Interactive docs are available at `http://localhost:8000/docs`.
 
 ### `POST /predict`
 
-Predict whether a movie will be profitable.
-
 **Request body**
 
 ```json
 {
-  "budget":     100000000,
+  "budget": 100000000,
   "popularity": 85.5,
-  "runtime":    132
+  "runtime": 132,
+  "original_language": "en",
+  "genres": ["Action", "Adventure", "Science Fiction"]
 }
 ```
 
@@ -118,6 +99,8 @@ Predict whether a movie will be profitable.
 | `budget` | `float` | Production budget in USD |
 | `popularity` | `float` | TMDB popularity score |
 | `runtime` | `float` | Film duration in minutes |
+| `original_language` | `str` | ISO language code |
+| `genres` | `list[str]` | List of genre labels |
 
 **Response**
 
@@ -127,19 +110,4 @@ Predict whether a movie will be profitable.
 }
 ```
 
-`is_successful` is `true` when the predicted profit (revenue − budget) is positive.
-
----
-
-## Dependencies
-
-Key packages — see `requirements.txt` for pinned versions.
-
-| Package | Purpose |
-|---------|---------|
-| `fastapi` | REST API framework |
-| `uvicorn` | ASGI server |
-| `scikit-learn` | ML pipeline |
-| `pandas` / `numpy` | Data processing |
-| `joblib` | Model serialisation |
-| `pydantic` | Request validation |
+`is_successful` is `true` when predicted profit is positive.
