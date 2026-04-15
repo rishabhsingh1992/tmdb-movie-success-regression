@@ -10,19 +10,19 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 
 
 DATASET_PATH = Path("../../Datasets/tmdb_5000_movies.csv")
 MODEL_PATH = Path("models/movie_success_pipeline.pkl")
 
 
-def parse_genres(raw_genres: str) -> str:
-    """Convert TMDB JSON-like genres payload into a space-separated genre string."""
-    if not isinstance(raw_genres, str) or not raw_genres.strip():
+def parse_name_list(raw_payload: str) -> str:
+    """Convert TMDB JSON-like list payload into a space-separated normalized name string."""
+    if not isinstance(raw_payload, str) or not raw_payload.strip():
         return ""
 
-    payload = raw_genres.strip()
+    payload = raw_payload.strip()
     parsed = None
 
     try:
@@ -36,9 +36,27 @@ def parse_genres(raw_genres: str) -> str:
     if not isinstance(parsed, list):
         return ""
 
-    genre_names = [item.get("name", "") for item in parsed if isinstance(item, dict)]
-    genre_names = [name.strip().lower() for name in genre_names if isinstance(name, str) and name.strip()]
-    return " ".join(genre_names)
+    names = [item.get("name", "") for item in parsed if isinstance(item, dict)]
+    names = [name.strip().lower() for name in names if isinstance(name, str) and name.strip()]
+    return " ".join(names)
+
+
+def extract_release_date_features(release_dates: pd.DataFrame) -> pd.DataFrame:
+    """Extract numerical calendar features from TMDB release date values."""
+    if isinstance(release_dates, pd.DataFrame):
+        values = release_dates.iloc[:, 0]
+    else:
+        values = pd.Series(release_dates)
+
+    parsed_dates = pd.to_datetime(values, errors="coerce")
+
+    return pd.DataFrame(
+        {
+            "release_year": parsed_dates.dt.year.fillna(0).astype(int),
+            "release_month": parsed_dates.dt.month.fillna(0).astype(int),
+        },
+        index=values.index,
+    )
 
 
 # 1. Load data
@@ -47,11 +65,40 @@ raw_df = pd.read_csv(DATASET_PATH)
 # 2. Basic cleaning + feature engineering
 df = raw_df.copy()
 df["profit"] = df["revenue"] - df["budget"]
-df["genres"] = df["genres"].apply(parse_genres)
+df["genres"] = df["genres"].apply(parse_name_list)
+df["keywords"] = df["keywords"].apply(parse_name_list)
+df["production_companies"] = df["production_companies"].apply(parse_name_list)
+df["production_countries"] = df["production_countries"].apply(parse_name_list)
+df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce")
 
-df = df.dropna(subset=["budget", "popularity", "runtime", "original_language", "genres", "profit"])
+df = df.dropna(
+    subset=[
+        "budget",
+        "popularity",
+        "runtime",
+        "original_language",
+        "genres",
+        "keywords",
+        "production_companies",
+        "production_countries",
+        "release_date",
+        "profit",
+    ]
+)
 
-X = df[["budget", "popularity", "runtime", "original_language", "genres"]]
+X = df[
+    [
+        "budget",
+        "popularity",
+        "runtime",
+        "original_language",
+        "genres",
+        "keywords",
+        "production_companies",
+        "production_countries",
+        "release_date",
+    ]
+]
 y = df["profit"]
 
 # 3. Split
@@ -61,12 +108,29 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 NUMERIC_COLS = ["budget", "popularity", "runtime"]
 CATEGORICAL_COLS = ["original_language"]
 TEXT_COL = "genres"
+KEYWORDS_COL = "keywords"
+PRODUCTION_COMPANIES_COL = "production_companies"
+PRODUCTION_COUNTRIES_COL = "production_countries"
+RELEASE_DATE_COL = ["release_date"]
 
 preprocessor = ColumnTransformer(
     transformers=[
         ("numeric", StandardScaler(), NUMERIC_COLS),
         ("categorical", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_COLS),
         ("genres", TfidfVectorizer(), TEXT_COL),
+        ("keywords", TfidfVectorizer(), KEYWORDS_COL),
+        ("production_companies", TfidfVectorizer(), PRODUCTION_COMPANIES_COL),
+        ("production_countries", TfidfVectorizer(), PRODUCTION_COUNTRIES_COL),
+        (
+            "release_date",
+            Pipeline(
+                [
+                    ("date_features", FunctionTransformer(extract_release_date_features, validate=False)),
+                    ("scale", StandardScaler()),
+                ]
+            ),
+            RELEASE_DATE_COL,
+        ),
     ]
 )
 
